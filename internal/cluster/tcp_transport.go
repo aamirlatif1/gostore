@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"errors"
 	"fmt"
 	"net"
 )
@@ -9,14 +10,13 @@ type TCPTransportOpts struct {
 	ListenAddr    string
 	HandshakeFunc HandshakeFunc
 	Decoder       Decoder
+	OnPeer        func(Peer) error
 }
 
 type TCPTransport struct {
 	TCPTransportOpts
 	listerner net.Listener
-
-	// mu    sync.RWMutex
-	// peers map[net.Addr]Peer
+	rpcChan   chan RPC
 }
 
 // TCPPeer represents the remote node over a TCP connection.
@@ -34,10 +34,20 @@ func NewTCPPeer(conn net.Conn, outbound bool) *TCPPeer {
 	}
 }
 
+func (p *TCPPeer) Close() error {
+	return p.conn.Close()
+}
+
 func NewTCPTransport(opts TCPTransportOpts) *TCPTransport {
 	return &TCPTransport{
 		TCPTransportOpts: opts,
+		rpcChan:          make(chan RPC),
 	}
+}
+
+// Consume implement the transprt interface which return read-only channel
+func (t *TCPTransport) Consume() <-chan RPC {
+	return t.rpcChan
 }
 
 func (t *TCPTransport) ListenAndAccept() error {
@@ -60,32 +70,43 @@ func (t *TCPTransport) startAccptLoop() {
 	}
 }
 
-type Message struct {
+type RPC struct {
+	From    net.Addr
 	Payload []byte
 }
 
 func (t *TCPTransport) handleConnection(conn net.Conn) {
+	var err error
+	defer func() {
+		fmt.Printf("dropping peer connection : %s", err)
+		conn.Close()
+	}()
 	peer := NewTCPPeer(conn, true)
 
 	if err := t.HandshakeFunc(peer); err != nil {
-		err := conn.Close()
-		if err != nil {
-			fmt.Printf("TCP handshake error %s", err)
-			return
-		}
 		fmt.Printf("TCP handshake error %s", err)
 		return
 	}
 
+	if t.OnPeer != nil {
+		if err = t.OnPeer(peer); err != nil {
+			return
+		}
+	}
+
 	// read loop
-	msg := &Message{}
+	rpc := RPC{}
 	for {
-		if err := t.Decoder.Decode(conn, msg); err != nil {
-			fmt.Printf("TCP error %s\n", err)
+		err = t.Decoder.Decode(conn, &rpc)
+		if errors.Is(err, net.ErrClosed) {
+			return
+		}
+		if err != nil {
+			fmt.Printf("TCP read error %s\n", err)
 			continue
 		}
-
-		fmt.Printf("message : %s\n", string(msg.Payload))
+		rpc.From = conn.RemoteAddr()
+		t.rpcChan <- rpc
 	}
 
 }

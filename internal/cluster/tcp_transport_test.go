@@ -8,7 +8,9 @@ import (
 
 func Test(t *testing.T) {
 	opts := cluster.TCPTransportOpts{
-		ListenAddr: ":4000",
+		ListenAddr:    ":4000",
+		HandshakeFunc: cluster.NOOPHandshakeFunc,
+		Decoder:       cluster.DefaultDecoder{},
 	}
 	tr := cluster.NewTCPTransport(opts)
 
