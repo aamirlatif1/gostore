@@ -1,8 +1,12 @@
+
 build:
 	@go build -o bin/gostore
+
+lint:
+	@golangci-lint run
 
 run: build
 	@./bin/gostore
 
-test:
+test: lint
 	@go test ./... -v
