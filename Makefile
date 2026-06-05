@@ -1,6 +1,6 @@
 
 build:
-	@go build -o bin/gostore
+	@go build -o bin/gostore ./cmd/server
 
 lint:
 	@golangci-lint run

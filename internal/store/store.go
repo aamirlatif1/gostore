@@ -80,7 +80,11 @@ func NewStore(opts StoreOpts) *Store {
 	}
 }
 
-func (s *Store) WriteStream(key string, r io.Reader) error {
+func (s *Store) Write(key string, r io.Reader) error {
+	return s.writeStream(key, r)
+}
+
+func (s *Store) writeStream(key string, r io.Reader) error {
 	pathKey := s.PathTransformFunc(key)
 	pathnameWithRoot := fmt.Sprintf("%s/%s", s.RootPath, pathKey.Pathname)
 	if err := os.MkdirAll(pathnameWithRoot, os.ModePerm); err != nil {
