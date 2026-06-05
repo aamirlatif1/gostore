@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"testing"
 
@@ -22,31 +23,27 @@ func TestPahtTransformFunc(t *testing.T) {
 }
 
 func TestStore(t *testing.T) {
-	key := "myspacialpic"
-	opts := store.StoreOpts{
-		PathTransformFunc: store.CASPathTransformFunc,
-	}
-	s := store.NewStore(opts)
+	s := setupStore(t)
 
-	data := []byte("some jpg bytes")
-	if err := s.WriteStream(key, bytes.NewReader(data)); err != nil {
-		t.Error(err)
+	for i := range 50 {
+		key := fmt.Sprintf("monsbestpicture_%d", i)
+		data := []byte("some jpg bytes")
+		if err := s.WriteStream(key, bytes.NewReader(data)); err != nil {
+			t.Error(err)
+		}
+
+		r, err := s.Read(key)
+		if err != nil {
+			t.Error(err)
+		}
+
+		b, _ := io.ReadAll(r)
+
+		if string(b) != string(data) {
+			t.Errorf("read content did not match, want %q got %q", data, b)
+		}
 	}
 
-	r, err := s.Read(key)
-	if err != nil {
-		t.Error(err)
-	}
-
-	b, _ := io.ReadAll(r)
-
-	if string(b) != string(data) {
-		t.Errorf("read content did not match, want %q got %q", data, b)
-	}
-	err = s.Delete(key)
-	if err != nil {
-		t.Error(err)
-	}
 }
 
 func TestDeleteFile(t *testing.T) {
@@ -69,4 +66,19 @@ func TestDeleteFile(t *testing.T) {
 	if fileExist {
 		t.Error("file should be deleted")
 	}
+}
+
+func setupStore(t testing.TB) *store.Store {
+	t.Helper()
+	opts := store.StoreOpts{
+		PathTransformFunc: store.CASPathTransformFunc,
+	}
+	s := store.NewStore(opts)
+	t.Cleanup(func() {
+		err := s.Clear()
+		if err != nil {
+			t.Error(err)
+		}
+	})
+	return s
 }

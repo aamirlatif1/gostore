@@ -152,3 +152,7 @@ func (s *Store) Has(key string) bool {
 	}
 	return true
 }
+
+func (s *Store) Clear() error {
+	return os.RemoveAll(s.RootPath)
+}
