@@ -7,7 +7,10 @@ import (
 )
 
 func OnPeer(peer cluster.Peer) error {
-	peer.Close()
+	err := peer.Close()
+	if err != nil {
+		return err
+	}
 	fmt.Println("some logic outside of tcp transport")
 	return nil
 }
