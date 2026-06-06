@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"log"
 	"time"
 
@@ -34,14 +35,27 @@ func makeServer(listenAddr string, nodes ...string) *FileServer {
 func main() {
 
 	s := makeServer(":4000")
+	s2 := makeServer(":3000", ":4000")
+
+	// go func() {
+	// 	time.Sleep(2 * time.Second)
+	// 	s.Stop()
+	// }()
 
 	go func() {
-		time.Sleep(2 * time.Second)
-		s.Stop()
+		if err := s.Start(); err != nil {
+			log.Fatal(err)
+		}
 	}()
 
-	if err := s.Start(); err != nil {
-		log.Fatal(err)
-	}
+	go s2.Start()
+
+	time.Sleep(2 * time.Second)
+
+	data := bytes.NewReader([]byte("my big data file here!"))
+
+	s2.StoreData("myprivatefile", data)
+
+	select {}
 
 }

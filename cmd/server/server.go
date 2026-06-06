@@ -1,7 +1,10 @@
 package main
 
 import (
+	"bytes"
+	"encoding/gob"
 	"fmt"
+	"io"
 	"log"
 	"sync"
 
@@ -66,13 +69,40 @@ func (s *FileServer) loop() {
 	}()
 	for {
 		select {
-		case msg := <-s.Transport.Consume():
-			fmt.Println(msg)
+		case rpc := <-s.Transport.Consume():
+			var msg Message
+			if err := gob.NewDecoder(bytes.NewReader(rpc.Payload)).Decode(&msg); err != nil {
+				log.Println(err)
+			}
+
+			fmt.Printf("recd: %s\n", string(msg.Payload.([]byte)))
+
+			peer, ok := s.peers[rpc.From]
+			if !ok {
+				panic("peer not found in peer map")
+			}
+
+			fmt.Printf("%+v", peer)
+
+			b := make([]byte, 1000)
+			if _, err := peer.Read(b); err != nil {
+				panic(err)
+			}
+
+			fmt.Printf("recv: %s\n", string(b))
+			// if err := s.handleMessage(&m); err != nil {
+			// 	log.Println(err)
+			// }
 		case <-s.quitCh:
 			return
 		}
 	}
 }
+
+// func (s *FileServer) handleMessage(msg *Message) error {
+
+// 	return nil
+// }
 
 func (s *FileServer) Stop() {
 	close(s.quitCh)
@@ -98,6 +128,60 @@ func (s *FileServer) OnPeer(p cluster.Peer) error {
 	s.peers[p.RemoteAddr().String()] = p
 
 	log.Printf("connected with remote peer: %s\n", p.RemoteAddr())
+
+	return nil
+}
+
+func (s *FileServer) broadcast(p *Message) error {
+	peers := []io.Writer{}
+	for _, peer := range s.peers {
+		peers = append(peers, peer)
+	}
+	mw := io.MultiWriter(peers...)
+	return gob.NewEncoder(mw).Encode(p)
+}
+
+type Message struct {
+	From    string
+	Payload any
+}
+
+func (s *FileServer) StoreData(key string, r io.Reader) error {
+	// 1. Store this file on disk
+	// 2. broadcase this file to all known peers in the network
+
+	buf := new(bytes.Buffer)
+	msg := &Message{
+		Payload: []byte("storagekey"),
+	}
+	if err := gob.NewEncoder(buf).Encode(msg); err != nil {
+		return err
+	}
+
+	for _, peer := range s.peers {
+		if err := peer.Send(buf.Bytes()); err != nil {
+			return err
+		}
+	}
+
+	payload := []byte("THIS IS LARGE FILE")
+	for _, peer := range s.peers {
+		if err := peer.Send(payload); err != nil {
+			return err
+		}
+	}
+
+	// buf := new(bytes.Buffer)
+	// tee := io.TeeReader(r, buf)
+
+	// if err := s.store.Write(key, tee); err != nil {
+	// 	return err
+	// }
+
+	// _, err := io.Copy(buf, r)
+	// if err != nil {
+	// 	return err
+	// }
 
 	return nil
 }
