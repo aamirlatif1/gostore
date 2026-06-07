@@ -28,14 +28,14 @@ type TCPPeer struct {
 	// if we dial and retrieve a connection => true otherwise false.
 	outbound bool
 
-	Wg *sync.WaitGroup
+	wg *sync.WaitGroup
 }
 
 func NewTCPPeer(conn net.Conn, outbound bool) *TCPPeer {
 	return &TCPPeer{
 		Conn:     conn,
 		outbound: outbound,
-		Wg:       &sync.WaitGroup{},
+		wg:       &sync.WaitGroup{},
 	}
 }
 
@@ -44,10 +44,14 @@ func (p *TCPPeer) Send(data []byte) error {
 	return err
 }
 
+func (p *TCPPeer) CloseStream() {
+	p.wg.Done()
+}
+
 func NewTCPTransport(opts TCPTransportOpts) *TCPTransport {
 	return &TCPTransport{
 		TCPTransportOpts: opts,
-		rpcChan:          make(chan RPC),
+		rpcChan:          make(chan RPC, 1024),
 	}
 }
 
@@ -87,7 +91,7 @@ func (t *TCPTransport) Close() error {
 	return t.listerner.Close()
 }
 
-func (t *TCPTransport) ListenAddress() string {
+func (t *TCPTransport) Addr() string {
 	return t.ListenAddr
 }
 
@@ -99,11 +103,6 @@ func (t *TCPTransport) Dial(addr string) error {
 
 	go t.handleConnection(conn, true)
 	return nil
-}
-
-type RPC struct {
-	From    string
-	Payload []byte
 }
 
 func (t *TCPTransport) handleConnection(conn net.Conn, outbound bool) {
@@ -126,23 +125,24 @@ func (t *TCPTransport) handleConnection(conn net.Conn, outbound bool) {
 	}
 
 	// read loop
-	rpc := RPC{}
+
 	for {
+		rpc := RPC{}
 		err = t.Decoder.Decode(conn, &rpc)
 		if errors.Is(err, net.ErrClosed) {
 			return
 		}
-		if err != nil {
-			fmt.Printf("TCP read error %s\n", err)
+
+		rpc.From = conn.RemoteAddr().String()
+		if rpc.Stream {
+			peer.wg.Add(1)
+			fmt.Printf("[%s] incoming stream, waiting...\n", conn.RemoteAddr())
+			peer.wg.Wait()
+			fmt.Printf("[%s] stream closed, resuming read loop\n", conn.RemoteAddr())
 			continue
 		}
-		rpc.From = conn.RemoteAddr().String()
 
-		fmt.Println("waiting till stream is done")
-		peer.Wg.Add(1)
 		t.rpcChan <- rpc
-		peer.Wg.Wait()
-		fmt.Println("stream done continuing normal read loop")
 	}
 
 }

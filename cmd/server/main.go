@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"log"
 	"time"
 
@@ -37,11 +38,6 @@ func main() {
 	s := makeServer(":4000")
 	s2 := makeServer(":3000", ":4000")
 
-	// go func() {
-	// 	time.Sleep(2 * time.Second)
-	// 	s.Stop()
-	// }()
-
 	go func() {
 		if err := s.Start(); err != nil {
 			log.Fatal(err)
@@ -50,11 +46,26 @@ func main() {
 
 	go s2.Start()
 
-	time.Sleep(2 * time.Second)
+	time.Sleep(500 * time.Millisecond)
 
-	data := bytes.NewReader([]byte("my big data file here!"))
+	for i := 0; i < 10; i++ {
+		data := bytes.NewReader([]byte("my big data file here!"))
+		s2.Store(fmt.Sprintf("myprivatefile_%d", i), data)
+		time.Sleep(5 * time.Millisecond)
+	}
 
-	s2.StoreData("myprivatefile", data)
+	// r, err := s.Get("foo")
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
+
+	// time.Sleep(time.Second)
+	// b, err := io.ReadAll(r)
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
+
+	// fmt.Printf("file data here : %s\n", string(b))
 
 	select {}
 
