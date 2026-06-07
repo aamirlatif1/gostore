@@ -12,6 +12,10 @@ import (
 	"github.com/aamirlatif1/gostore/internal/store"
 )
 
+func init() {
+	gob.Register(MessageStoreFile{})
+}
+
 type FileServerOpts struct {
 	ListenAddr        string
 	StorageRoot       string
@@ -75,14 +79,12 @@ func (s *FileServer) loop() {
 				log.Println(err)
 			}
 
-			fmt.Printf("recd: %s\n", string(msg.Payload.([]byte)))
+			fmt.Printf("payload : %+v\n", msg.Payload)
 
 			peer, ok := s.peers[rpc.From]
 			if !ok {
 				panic("peer not found in peer map")
 			}
-
-			fmt.Printf("%+v", peer)
 
 			b := make([]byte, 1000)
 			if _, err := peer.Read(b); err != nil {
@@ -90,6 +92,7 @@ func (s *FileServer) loop() {
 			}
 
 			fmt.Printf("recv: %s\n", string(b))
+			peer.(*cluster.TCPPeer).Wg.Done()
 			// if err := s.handleMessage(&m); err != nil {
 			// 	log.Println(err)
 			// }
@@ -146,13 +149,19 @@ type Message struct {
 	Payload any
 }
 
+type MessageStoreFile struct {
+	Key string
+}
+
 func (s *FileServer) StoreData(key string, r io.Reader) error {
 	// 1. Store this file on disk
 	// 2. broadcase this file to all known peers in the network
 
 	buf := new(bytes.Buffer)
 	msg := &Message{
-		Payload: []byte("storagekey"),
+		Payload: MessageStoreFile{
+			Key: key,
+		},
 	}
 	if err := gob.NewEncoder(buf).Encode(msg); err != nil {
 		return err
@@ -164,12 +173,14 @@ func (s *FileServer) StoreData(key string, r io.Reader) error {
 		}
 	}
 
-	payload := []byte("THIS IS LARGE FILE")
-	for _, peer := range s.peers {
-		if err := peer.Send(payload); err != nil {
-			return err
-		}
-	}
+	// time.Sleep(3 * time.Second)
+
+	// payload := []byte("THIS IS LARGE FILE")
+	// for _, peer := range s.peers {
+	// 	if err := peer.Send(payload); err != nil {
+	// 		return err
+	// 	}
+	// }
 
 	// buf := new(bytes.Buffer)
 	// tee := io.TeeReader(r, buf)
