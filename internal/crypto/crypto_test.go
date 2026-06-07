@@ -19,5 +19,5 @@ func TestCopyEncrpt(t *testing.T) {
 		t.Error("error not expected", err)
 	}
 
-	fmt.Println(dst.Bytes())
+	fmt.Println(dst.String())
 }

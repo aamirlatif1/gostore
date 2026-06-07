@@ -40,7 +40,7 @@ func NewTCPPeer(conn net.Conn, outbound bool) *TCPPeer {
 }
 
 func (p *TCPPeer) Send(data []byte) error {
-	_, err := p.Conn.Write(data)
+	_, err := p.Write(data)
 	return err
 }
 

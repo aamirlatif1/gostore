@@ -88,7 +88,7 @@ func (s *FileServer) loop() {
 func (s *FileServer) handleMessage(from string, msg *Message) error {
 	switch v := msg.Payload.(type) {
 	case MessageStoreFile:
-		s.handleMessageStoreFile(from, v)
+		return s.handleMessageStoreFile(from, v)
 	case MessageGetFile:
 		return s.handleMessageGetFile(from, v)
 	}
@@ -109,7 +109,11 @@ func (s *FileServer) handleMessageGetFile(from string, msg MessageGetFile) error
 
 	if rc, ok := r.(io.ReadCloser); ok {
 		fmt.Println("closing readcloser")
-		defer rc.Close()
+		defer func() {
+			if err := rc.Close(); err != nil {
+				log.Println("close err: ", err)
+			}
+		}()
 	}
 
 	peer, ok := s.peers[from]
@@ -118,8 +122,12 @@ func (s *FileServer) handleMessageGetFile(from string, msg MessageGetFile) error
 	}
 
 	// first send IncomingStream then file size
-	peer.Send([]byte{cluster.IncomingStream})
-	binary.Write(peer, binary.LittleEndian, fileSize)
+	if err := peer.Send([]byte{cluster.IncomingStream}); err != nil {
+		return err
+	}
+	if err := binary.Write(peer, binary.LittleEndian, fileSize); err != nil {
+		return err
+	}
 
 	n, err := io.Copy(peer, r)
 	if err != nil {
@@ -175,15 +183,6 @@ func (s *FileServer) OnPeer(p cluster.Peer) error {
 	return nil
 }
 
-func (s *FileServer) stream(p *Message) error {
-	peers := []io.Writer{}
-	for _, peer := range s.peers {
-		peers = append(peers, peer)
-	}
-	mw := io.MultiWriter(peers...)
-	return gob.NewEncoder(mw).Encode(p)
-}
-
 func (s *FileServer) broadcast(msg *Message) error {
 	buf := new(bytes.Buffer)
 	if err := gob.NewEncoder(buf).Encode(msg); err != nil {
@@ -191,7 +190,9 @@ func (s *FileServer) broadcast(msg *Message) error {
 	}
 
 	for _, peer := range s.peers {
-		peer.Send([]byte{cluster.IncomingMessage})
+		if err := peer.Send([]byte{cluster.IncomingMessage}); err != nil {
+			return err
+		}
 		if err := peer.Send(buf.Bytes()); err != nil {
 			return err
 		}
@@ -223,7 +224,9 @@ func (s *FileServer) Get(key string) (io.Reader, error) {
 	for _, peer := range s.peers {
 		// first read file size so we can limit stream
 		var fileSize int64
-		binary.Read(peer, binary.LittleEndian, &fileSize)
+		if err := binary.Read(peer, binary.LittleEndian, &fileSize); err != nil {
+			return nil, err
+		}
 		n, err := s.store.Write(key, io.LimitReader(peer, fileSize))
 		if err != nil {
 			return nil, err
@@ -263,7 +266,9 @@ func (s *FileServer) Store(key string, r io.Reader) error {
 
 	// TODO: use a multiwriter here.
 	for _, peer := range s.peers {
-		peer.Send([]byte{cluster.IncomingStream})
+		if err := peer.Send([]byte{cluster.IncomingStream}); err != nil {
+			return err
+		}
 		n, err := io.Copy(peer, fileBuf)
 		if err != nil {
 			return err

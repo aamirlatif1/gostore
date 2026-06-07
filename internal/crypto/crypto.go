@@ -10,7 +10,9 @@ import (
 
 func NewEncryptionKey() []byte {
 	keyBuf := make([]byte, 32)
-	io.ReadFull(rand.Reader, keyBuf)
+	if _, err := io.ReadFull(rand.Reader, keyBuf); err != nil {
+		panic(err)
+	}
 	return keyBuf
 }
 

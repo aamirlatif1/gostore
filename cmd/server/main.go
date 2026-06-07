@@ -44,7 +44,11 @@ func main() {
 		}
 	}()
 
-	go s2.Start()
+	go func() {
+		if err := s2.Start(); err != nil {
+			log.Fatal(err)
+		}
+	}()
 
 	time.Sleep(500 * time.Millisecond)
 
