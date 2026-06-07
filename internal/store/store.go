@@ -80,35 +80,34 @@ func NewStore(opts StoreOpts) *Store {
 	}
 }
 
-func (s *Store) Write(key string, r io.Reader) error {
+func (s *Store) Write(key string, r io.Reader) (int64, error) {
 	return s.writeStream(key, r)
 }
 
-func (s *Store) writeStream(key string, r io.Reader) error {
+func (s *Store) writeStream(key string, r io.Reader) (int64, error) {
 	pathKey := s.PathTransformFunc(key)
 	pathnameWithRoot := fmt.Sprintf("%s/%s", s.RootPath, pathKey.Pathname)
 	if err := os.MkdirAll(pathnameWithRoot, os.ModePerm); err != nil {
-		return err
+		return 0, err
 	}
 	buf := new(bytes.Buffer)
 	_, err := io.Copy(buf, r)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	fullpathWithRoot := fmt.Sprintf("%s/%s", s.RootPath, pathKey.FullPath())
 	f, err := os.Create(fullpathWithRoot)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	n, err := io.Copy(f, buf)
 	if err != nil {
-		return err
+		return 0, err
 	}
-	log.Printf("written (%d) bytes to disk", n)
 
-	return nil
+	return n, nil
 }
 
 func (s *Store) Read(key string) (io.Reader, error) {

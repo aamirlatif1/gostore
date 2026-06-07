@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"sync"
+	"time"
 
 	"github.com/aamirlatif1/gostore/internal/cluster"
 	"github.com/aamirlatif1/gostore/internal/store"
@@ -78,34 +79,41 @@ func (s *FileServer) loop() {
 			if err := gob.NewDecoder(bytes.NewReader(rpc.Payload)).Decode(&msg); err != nil {
 				log.Println(err)
 			}
-
-			fmt.Printf("payload : %+v\n", msg.Payload)
-
-			peer, ok := s.peers[rpc.From]
-			if !ok {
-				panic("peer not found in peer map")
+			if err := s.handleMessage(rpc.From, &msg); err != nil {
+				fmt.Println(err)
+				return
 			}
-
-			b := make([]byte, 1000)
-			if _, err := peer.Read(b); err != nil {
-				panic(err)
-			}
-
-			fmt.Printf("recv: %s\n", string(b))
-			peer.(*cluster.TCPPeer).Wg.Done()
-			// if err := s.handleMessage(&m); err != nil {
-			// 	log.Println(err)
-			// }
 		case <-s.quitCh:
 			return
 		}
 	}
 }
 
-// func (s *FileServer) handleMessage(msg *Message) error {
+func (s *FileServer) handleMessage(from string, msg *Message) error {
+	switch v := msg.Payload.(type) {
+	case MessageStoreFile:
+		s.handleMessageStoreFile(from, v)
+	}
+	return nil
+}
 
-// 	return nil
-// }
+func (s *FileServer) handleMessageStoreFile(from string, msg MessageStoreFile) error {
+	peer, ok := s.peers[from]
+	if !ok {
+		return fmt.Errorf("peer (%s) cound not be found in peer list", from)
+	}
+
+	n, err := s.store.Write(msg.Key, io.LimitReader(peer, msg.Size))
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("written %d bytes to disk\n", n)
+
+	peer.(*cluster.TCPPeer).Wg.Done()
+
+	return nil
+}
 
 func (s *FileServer) Stop() {
 	close(s.quitCh)
@@ -150,49 +158,47 @@ type Message struct {
 }
 
 type MessageStoreFile struct {
-	Key string
+	Key  string
+	Size int64
 }
 
 func (s *FileServer) StoreData(key string, r io.Reader) error {
-	// 1. Store this file on disk
-	// 2. broadcase this file to all known peers in the network
+	var (
+		fileBuf = new(bytes.Buffer)
+		tee     = io.TeeReader(r, fileBuf)
+	)
 
-	buf := new(bytes.Buffer)
+	size, err := s.store.Write(key, tee)
+	if err != nil {
+		return err
+	}
+
 	msg := &Message{
 		Payload: MessageStoreFile{
-			Key: key,
+			Key:  key,
+			Size: size,
 		},
 	}
-	if err := gob.NewEncoder(buf).Encode(msg); err != nil {
+	msgBuf := new(bytes.Buffer)
+	if err := gob.NewEncoder(msgBuf).Encode(msg); err != nil {
 		return err
 	}
 
 	for _, peer := range s.peers {
-		if err := peer.Send(buf.Bytes()); err != nil {
+		if err := peer.Send(msgBuf.Bytes()); err != nil {
 			return err
 		}
 	}
 
-	// time.Sleep(3 * time.Second)
+	time.Sleep(3 * time.Second)
 
-	// payload := []byte("THIS IS LARGE FILE")
-	// for _, peer := range s.peers {
-	// 	if err := peer.Send(payload); err != nil {
-	// 		return err
-	// 	}
-	// }
-
-	// buf := new(bytes.Buffer)
-	// tee := io.TeeReader(r, buf)
-
-	// if err := s.store.Write(key, tee); err != nil {
-	// 	return err
-	// }
-
-	// _, err := io.Copy(buf, r)
-	// if err != nil {
-	// 	return err
-	// }
+	for _, peer := range s.peers {
+		n, err := io.Copy(peer, fileBuf)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("received and written bytes to disk %d\n", n)
+	}
 
 	return nil
 }

@@ -28,7 +28,7 @@ func TestStore(t *testing.T) {
 	for i := range 50 {
 		key := fmt.Sprintf("monsbestpicture_%d", i)
 		data := []byte("some jpg bytes")
-		if err := s.Write(key, bytes.NewReader(data)); err != nil {
+		if _, err := s.Write(key, bytes.NewReader(data)); err != nil {
 			t.Error(err)
 		}
 
@@ -54,7 +54,7 @@ func TestDeleteFile(t *testing.T) {
 	s := store.NewStore(opts)
 
 	data := []byte("some jpg bytes")
-	if err := s.Write(key, bytes.NewReader(data)); err != nil {
+	if _, err := s.Write(key, bytes.NewReader(data)); err != nil {
 		t.Error(err)
 	}
 
