@@ -11,10 +11,12 @@ import (
 	"time"
 
 	"github.com/aamirlatif1/gostore/internal/cluster"
+	"github.com/aamirlatif1/gostore/internal/crypto"
 	"github.com/aamirlatif1/gostore/internal/store"
 )
 
 type FileServerOpts struct {
+	EncKey            []byte
 	ListenAddr        string
 	StorageRoot       string
 	PathTransformFunc store.PathTransformFunc
@@ -165,6 +167,7 @@ func (s *FileServer) bootstrapNetwork() error {
 			continue
 		}
 		go func(addr string) {
+			fmt.Printf("[%s] attempting to connect with remote : %s", s.Transport.Addr(), addr)
 			if err := s.Transport.Dial(addr); err != nil {
 				log.Println("dial err: ", err)
 			}
@@ -227,7 +230,10 @@ func (s *FileServer) Get(key string) (io.Reader, error) {
 		if err := binary.Read(peer, binary.LittleEndian, &fileSize); err != nil {
 			return nil, err
 		}
-		n, err := s.store.Write(key, io.LimitReader(peer, fileSize))
+
+		n, err := s.store.WriteDecrypt(s.EncKey, key, io.LimitReader(peer, fileSize))
+
+		// n, err := s.store.Write(key, io.LimitReader(peer, fileSize))
 		if err != nil {
 			return nil, err
 		}
@@ -242,8 +248,8 @@ func (s *FileServer) Get(key string) (io.Reader, error) {
 
 func (s *FileServer) Store(key string, r io.Reader) error {
 	var (
-		fileBuf = new(bytes.Buffer)
-		tee     = io.TeeReader(r, fileBuf)
+		fileBuffer = new(bytes.Buffer)
+		tee        = io.TeeReader(r, fileBuffer)
 	)
 
 	size, err := s.store.Write(key, tee)
@@ -254,7 +260,7 @@ func (s *FileServer) Store(key string, r io.Reader) error {
 	msg := Message{
 		Payload: MessageStoreFile{
 			Key:  key,
-			Size: size,
+			Size: 16 + size,
 		},
 	}
 
@@ -264,17 +270,20 @@ func (s *FileServer) Store(key string, r io.Reader) error {
 
 	time.Sleep(5 * time.Millisecond)
 
-	// TODO: use a multiwriter here.
+	peers := []io.Writer{}
+
 	for _, peer := range s.peers {
-		if err := peer.Send([]byte{cluster.IncomingStream}); err != nil {
-			return err
-		}
-		n, err := io.Copy(peer, fileBuf)
-		if err != nil {
-			return err
-		}
-		fmt.Printf("received and written bytes to disk %d\n", n)
+		peers = append(peers, peer)
 	}
+
+	mw := io.MultiWriter(peers...)
+	mw.Write([]byte{cluster.IncomingStream})
+
+	n, err := crypto.CopyEncrypt(s.EncKey, fileBuffer, mw)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("[%s] received and written bytes to disk %d\n", s.Transport.Addr(), n)
 
 	return nil
 }

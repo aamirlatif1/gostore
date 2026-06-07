@@ -1,7 +1,6 @@
 package store
 
 import (
-	"bytes"
 	"crypto/sha1"
 	"encoding/hex"
 	"errors"
@@ -11,6 +10,8 @@ import (
 	"log"
 	"os"
 	"strings"
+
+	"github.com/aamirlatif1/gostore/internal/crypto"
 )
 
 const defaultRootPath = "../../aanetwork"
@@ -85,29 +86,34 @@ func (s *Store) Write(key string, r io.Reader) (int64, error) {
 }
 
 func (s *Store) writeStream(key string, r io.Reader) (int64, error) {
+	f, err := s.openFileForWriting(key)
+	if err != nil {
+		return 0, err
+	}
+	return io.Copy(f, r)
+}
+
+func (s *Store) openFileForWriting(key string) (*os.File, error) {
 	pathKey := s.PathTransformFunc(key)
 	pathnameWithRoot := fmt.Sprintf("%s/%s", s.RootPath, pathKey.Pathname)
 	if err := os.MkdirAll(pathnameWithRoot, os.ModePerm); err != nil {
-		return 0, err
-	}
-	buf := new(bytes.Buffer)
-	_, err := io.Copy(buf, r)
-	if err != nil {
-		return 0, err
+		return nil, err
 	}
 
 	fullpathWithRoot := fmt.Sprintf("%s/%s", s.RootPath, pathKey.FullPath())
-	f, err := os.Create(fullpathWithRoot)
+	return os.Create(fullpathWithRoot)
+
+}
+
+func (s *Store) WriteDecrypt(encKey []byte, key string, r io.Reader) (int64, error) {
+	f, err := s.openFileForWriting(key)
 	if err != nil {
 		return 0, err
 	}
 
-	n, err := io.Copy(f, buf)
-	if err != nil {
-		return 0, err
-	}
+	n, err := crypto.CopyDecrypt(encKey, r, f)
 
-	return n, nil
+	return int64(n), err
 }
 
 func (s *Store) Read(key string) (int64, io.Reader, error) {

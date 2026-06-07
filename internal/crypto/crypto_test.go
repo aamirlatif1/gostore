@@ -2,14 +2,14 @@ package crypto_test
 
 import (
 	"bytes"
-	"fmt"
 	"testing"
 
 	"github.com/aamirlatif1/gostore/internal/crypto"
 )
 
-func TestCopyEncrpt(t *testing.T) {
-	src := bytes.NewReader([]byte("Foo not Bar"))
+func TestCopyEncrptAndDecrypt(t *testing.T) {
+	payload := "Foo not Bar"
+	src := bytes.NewReader([]byte(payload))
 	dst := new(bytes.Buffer)
 	key := crypto.NewEncryptionKey()
 
@@ -19,5 +19,16 @@ func TestCopyEncrpt(t *testing.T) {
 		t.Error("error not expected", err)
 	}
 
-	fmt.Println(dst.String())
+	out := new(bytes.Buffer)
+	nw, err := crypto.CopyDecrypt(key, dst, out)
+	if err != nil {
+		t.Error(err)
+	}
+	if nw != 16+len(payload) {
+		t.Errorf("decrypted message length not matching, expeted %d actual %d", 16+len(payload), nw)
+	}
+
+	if out.String() != payload {
+		t.Errorf("\nmessage encryption and decryption do not match, expect %s actual %s", payload, out.String())
+	}
 }

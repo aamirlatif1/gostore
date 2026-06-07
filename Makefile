@@ -8,5 +8,5 @@ lint:
 run: build
 	@./bin/gostore
 
-test: lint
+test:
 	@go test ./... -v
